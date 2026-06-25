@@ -195,7 +195,15 @@ public extension VNCKeyCode {
 				case .rightOption:
 					remappedRawValue = Self.rightOptionForARD.rawValue
 				default:
-					break
+					// macOS Screen Sharing (ARD) ignores the keypad-digit keysyms
+					// (XK_KP_0..9 = 0xffb0..0xffb9) — they inject no character (verified
+					// via E2E: regular top-row digits inject, keypad keysyms produce
+					// nothing). Remap them to the regular digit keysyms (XK_0..9 =
+					// 0x30..0x39), which ARD honors, so the numeric keypad types digits.
+					// Non-ARD servers keep the proper keypad keysyms. (CNDF numpad fix.)
+					if (0xffb0...0xffb9).contains(rawValue) {
+						remappedRawValue = 0x30 + (rawValue - 0xffb0)
+					}
 			}
 		}
 		
