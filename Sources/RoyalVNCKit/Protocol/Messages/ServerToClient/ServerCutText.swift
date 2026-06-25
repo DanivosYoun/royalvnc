@@ -10,8 +10,6 @@ extension VNCProtocol {
     struct ServerCutText: VNCReceivableMessage {
         static let messageType: UInt8 = 3
 
-		static let stringEncoding: String.Encoding = .isoLatin1
-
         let messageType: UInt8
         let text: String
 
@@ -28,8 +26,16 @@ extension VNCProtocol.ServerCutText {
 											 logger: logger)
 
 		if length >= 0 { // Standard Message
-			let text = try await connection.readString(encoding: Self.stringEncoding,
-													   length: .init(length))
+			// length 0 = empty clipboard: readBuffered(0) throws .noData (unlike the old readString path
+			// which returned ""), which would tear down the connection — so short-circuit. (CNDF.)
+			if length == 0 {
+				return .init(messageType: Self.messageType, text: "", extended: nil)
+			}
+			// Lossy UTF-8 decode (read raw bytes, decode with U+FFFD for invalid sequences) so a non-UTF-8
+			// server payload loses ONE clipboard update instead of throwing and tearing down the whole
+			// connection. UTF-8 is byte-identical to ASCII/Latin-1 for 0x00-0x7F. (CNDF clipboard fix.)
+			let data = try await connection.readBuffered(length: .init(length))
+			let text = String(decoding: data, as: UTF8.self)
 
 			return .init(messageType: Self.messageType,
 						 text: text,

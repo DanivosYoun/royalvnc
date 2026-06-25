@@ -55,6 +55,17 @@ private struct VNCKeyCodeMaps {
         CGKeyCodes.ansiKeypadPlus: .ansiKeypadPlus,
         CGKeyCodes.ansiKeypadEnter: .ansiKeypadEnter,
         CGKeyCodes.ansiKeypadDecimal: .ansiKeypadDecimal,
+        // Keypad digits → XK_KP_0..9 keysyms (CNDF numpad fix; was unmapped → fell back to ASCII digits).
+        CGKeyCodes.ansiKeypad0: .ansiKeypad0,
+        CGKeyCodes.ansiKeypad1: .ansiKeypad1,
+        CGKeyCodes.ansiKeypad2: .ansiKeypad2,
+        CGKeyCodes.ansiKeypad3: .ansiKeypad3,
+        CGKeyCodes.ansiKeypad4: .ansiKeypad4,
+        CGKeyCodes.ansiKeypad5: .ansiKeypad5,
+        CGKeyCodes.ansiKeypad6: .ansiKeypad6,
+        CGKeyCodes.ansiKeypad7: .ansiKeypad7,
+        CGKeyCodes.ansiKeypad8: .ansiKeypad8,
+        CGKeyCodes.ansiKeypad9: .ansiKeypad9,
 
         CGKeyCodes.f1: .f1,
         CGKeyCodes.f2: .f2,

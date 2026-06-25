@@ -8,7 +8,10 @@ extension VNCProtocol {
 	struct ClientCutText: VNCSendableMessage {
 		let messageType: UInt8 = 6
 
-		static let stringEncoding: String.Encoding = .isoLatin1
+		// UTF-8 (not RFB-legacy ISO Latin-1): Latin-1 cannot encode Hangul/CJK/emoji — data(using:)
+		// returns nil → an EMPTY cut-text was sent. UTF-8 is the de-facto modern encoding (macOS Screen
+		// Sharing speaks it) and is byte-identical to Latin-1 for ASCII. (CNDF clipboard fix.)
+		static let stringEncoding: String.Encoding = .utf8
 
 		let text: String
 	}

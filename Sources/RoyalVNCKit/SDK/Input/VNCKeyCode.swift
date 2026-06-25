@@ -49,7 +49,20 @@ public struct VNCKeyCode: Equatable {
 	public static let ansiKeypadPlus = VNCKeyCode(X11KeySymbols.XK_KP_Add)
 	public static let ansiKeypadEnter = VNCKeyCode(X11KeySymbols.XK_KP_Enter)
 	public static let ansiKeypadDecimal = VNCKeyCode(X11KeySymbols.XK_KP_Separator)
-
+	// Keypad digits: send the dedicated XK_KP_0..9 keysyms (not the plain ASCII digits) so the remote
+	// registers them on the numeric keypad. Without these the keycodes fall through to the ASCII-digit
+	// character path and many servers ignore them on the keypad. (CNDF numpad fix.)
+	public static let ansiKeypad0 = VNCKeyCode(X11KeySymbols.XK_KP_0)
+	public static let ansiKeypad1 = VNCKeyCode(X11KeySymbols.XK_KP_1)
+	public static let ansiKeypad2 = VNCKeyCode(X11KeySymbols.XK_KP_2)
+	public static let ansiKeypad3 = VNCKeyCode(X11KeySymbols.XK_KP_3)
+	public static let ansiKeypad4 = VNCKeyCode(X11KeySymbols.XK_KP_4)
+	public static let ansiKeypad5 = VNCKeyCode(X11KeySymbols.XK_KP_5)
+	public static let ansiKeypad6 = VNCKeyCode(X11KeySymbols.XK_KP_6)
+	public static let ansiKeypad7 = VNCKeyCode(X11KeySymbols.XK_KP_7)
+	public static let ansiKeypad8 = VNCKeyCode(X11KeySymbols.XK_KP_8)
+	public static let ansiKeypad9 = VNCKeyCode(X11KeySymbols.XK_KP_9)
+    
 	public static let f1 = VNCKeyCode(X11KeySymbols.XK_F1)
     public static let f2 = VNCKeyCode(X11KeySymbols.XK_F2)
     public static let f3 = VNCKeyCode(X11KeySymbols.XK_F3)
