@@ -48,7 +48,7 @@ public struct VNCKeyCode: Equatable {
 	public static let ansiKeypadMinus = VNCKeyCode(X11KeySymbols.XK_KP_Subtract)
 	public static let ansiKeypadPlus = VNCKeyCode(X11KeySymbols.XK_KP_Add)
 	public static let ansiKeypadEnter = VNCKeyCode(X11KeySymbols.XK_KP_Enter)
-	public static let ansiKeypadDecimal = VNCKeyCode(X11KeySymbols.XK_KP_Separator)
+	public static let ansiKeypadDecimal = VNCKeyCode(X11KeySymbols.XK_KP_Decimal)
 	// Keypad digits: send the dedicated XK_KP_0..9 keysyms (not the plain ASCII digits) so the remote
 	// registers them on the numeric keypad. Without these the keycodes fall through to the ASCII-digit
 	// character path and many servers ignore them on the keypad. (CNDF numpad fix.)
@@ -195,14 +195,24 @@ public extension VNCKeyCode {
 				case .rightOption:
 					remappedRawValue = Self.rightOptionForARD.rawValue
 				default:
-					// macOS Screen Sharing (ARD) ignores the keypad-digit keysyms
-					// (XK_KP_0..9 = 0xffb0..0xffb9) — they inject no character (verified
-					// via E2E: regular top-row digits inject, keypad keysyms produce
-					// nothing). Remap them to the regular digit keysyms (XK_0..9 =
-					// 0x30..0x39), which ARD honors, so the numeric keypad types digits.
-					// Non-ARD servers keep the proper keypad keysyms. (CNDF numpad fix.)
-					if (0xffb0...0xffb9).contains(rawValue) {
-						remappedRawValue = 0x30 + (rawValue - 0xffb0)
+					// macOS Screen Sharing (ARD) ignores the keypad keysyms — they inject
+					// no character (verified via E2E: regular ASCII keysyms inject, keypad
+					// keysyms produce nothing, the server even rings the bell). Remap them
+					// to their regular ASCII equivalents, which ARD honors, so the numeric
+					// keypad types digits/operators. Non-ARD servers keep the proper keypad
+					// keysyms. (CNDF numpad fix.)
+					//
+					// XK_KP_Multiply..XK_KP_9 (0xffaa..0xffb9) map CONTIGUOUSLY to the ASCII
+					// run '*' '+' ',' '-' '.' '/' '0'..'9' (0x2a..0x39):
+					switch rawValue {
+						case 0xffaa...0xffb9:
+							remappedRawValue = 0x2a + (rawValue - 0xffaa)
+						case X11KeySymbols.XK_KP_Equal:   // 0xffbd → '='
+							remappedRawValue = 0x3d
+						case X11KeySymbols.XK_KP_Enter:   // 0xff8d → Return
+							remappedRawValue = X11KeySymbols.XK_Return
+						default:
+							break
 					}
 			}
 		}
