@@ -44,6 +44,28 @@ extension BigNum {
         return true
     }
 
+    /// Random exponent of exactly `bits` bits.
+    ///
+    /// Diffie-Hellman does not need a private exponent as wide as the modulus, and
+    /// CryptoSwift's `power(_:modulus:)` walks **every bit of every word** of the
+    /// exponent with no early exit — so a full-width 4096-bit exponent costs 64
+    /// words where 4 would do. Measured on the same 4096-bit modulus: full width
+    /// 0.333s, 256-bit 0.019s (17.5x). gtk-vnc, the reference client for this exact
+    /// Apple handshake, has used a 31-bit exponent for years; 256 bits is far more
+    /// conservative than that while keeping the win.
+    func rand(bits: Int) -> Bool {
+        var value = CS.BigUInt.randomInteger(withExactWidth: bits)
+
+        // Degenerate exponents would leak the shared secret outright.
+        if value < 2 {
+            value = 2
+        }
+
+        self.bigInt = value
+
+        return true
+    }
+
     static func modExp(y: BigNum,
                        g: BigNum,
                        x: BigNum,
@@ -57,6 +79,20 @@ extension BigNum {
         let data = self.bigInt.serialize()
         
         return data
+    }
+
+    /// Big-endian bytes, left-padded with zeros to exactly `length`.
+    ///
+    /// `serialize()` returns the minimal encoding, so any value whose top byte is
+    /// zero comes back short — about 1 in 256. Every peer of this handshake (gtk-vnc
+    /// `vnc_mpi_to_bytes`, OpenSSL, noVNC) writes fixed key-size buffers, so a short
+    /// encoding silently changes both what goes on the wire and what gets hashed.
+    func bigEndianData(paddedTo length: Int) -> Data? {
+        guard let data = bigEndianData() else { return nil }
+        guard data.count <= length else { return nil }
+        guard data.count < length else { return data }
+
+        return Data(repeating: 0, count: length - data.count) + data
     }
 }
 
