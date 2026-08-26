@@ -25,6 +25,10 @@ extension VNCConnection {
 
 		var areContinuousUpdatesSupported = false
 		var areContinuousUpdatesEnabled = false
+
+		/// When the last FramebufferUpdate arrived. The Continuous Updates keepalive
+		/// uses it to notice that nothing has come for a while.
+		var lastFramebufferUpdateAt = Date()
 	}
 }
 

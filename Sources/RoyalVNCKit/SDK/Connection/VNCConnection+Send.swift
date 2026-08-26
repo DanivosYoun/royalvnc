@@ -21,9 +21,15 @@ extension VNCConnection {
 		}
 	}
 
-	func sendFramebufferUpdateRequest() async throws {
+	/// Ask for the next framebuffer update.
+	///
+	/// Normally a no-op while Continuous Updates is enabled — the server is supposed
+	/// to be pushing. `bypassingContinuousUpdates` is for the safety poll in
+	/// `enableContinuousUpdates()`, which exists precisely because a server can
+	/// acknowledge the extension and then push nothing.
+	func sendFramebufferUpdateRequest(bypassingContinuousUpdates: Bool = false) async throws {
 		guard let framebuffer,
-              !state.areContinuousUpdatesEnabled else {
+              bypassingContinuousUpdates || !state.areContinuousUpdatesEnabled else {
             return
         }
         

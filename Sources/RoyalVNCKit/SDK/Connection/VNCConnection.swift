@@ -60,6 +60,10 @@ public final class VNCConnection: NSObjectOrAnyObject {
 	let maxSupportedProtocolVersion = VNCProtocol.ProtocolVersion(majorVersion: 3,
 																  minorVersion: 8)
 
+	/// How long the connection may stay quiet, while Continuous Updates is enabled,
+	/// before a safety update request goes out anyway. See `enableContinuousUpdates`.
+	static let continuousUpdatesPollSeconds: Double = 1
+
 	let state = State()
 	let systemSound = VNCSystemSound()
 

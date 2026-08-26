@@ -60,7 +60,68 @@ private extension VNCConnection {
 		}
 	}
 
+	/// Switch Continuous Updates on, and keep a safety poll running behind it.
+	///
+	/// While it is on, `sendFramebufferUpdateRequest` is a no-op by design — that is
+	/// the whole point — which also means a server that acknowledges the extension
+	/// but never pushes leaves the screen frozen forever with nothing asking for
+	/// pixels. An earlier revision of this fork shipped exactly that.
+	///
+	/// The obvious guard, "if no update arrives within N seconds, give up", does not
+	/// work: **an idle desktop and a server that ignores the extension look
+	/// identical from here.** Both produce silence. Deciding between them by
+	/// counting updates gets it wrong in one direction or the other, and getting it
+	/// wrong towards "the server is fine" is a frozen screen.
+	///
+	/// So do not decide. After a quiet stretch, just send one ordinary update
+	/// request. Against a server that honours the extension this costs a 10-byte
+	/// message on an idle connection and nothing else; against one that does not, it
+	/// is the thing keeping the session alive. Correct either way, without needing to
+	/// tell the two apart.
+	func enableContinuousUpdates() async throws {
+		try await sendEnableContinuousUpdates()
+
+		guard state.areContinuousUpdatesEnabled else {
+			// Nothing was sent (no framebuffer yet, or already on) — keep polling.
+			try await sendFramebufferUpdateRequest()
+
+			return
+		}
+
+		state.lastFramebufferUpdateAt = Date()
+
+		logger.logDebug("Continuous Updates enabled; safety poll running")
+
+		Task { [weak self] in
+			while true {
+				try? await Task.sleep(seconds: Self.continuousUpdatesPollSeconds)
+
+				guard let self,
+					  !self.state.disconnectRequested,
+					  self.state.areContinuousUpdatesEnabled else {
+					return
+				}
+
+				let quietFor = Date().timeIntervalSince(self.state.lastFramebufferUpdateAt)
+
+				guard quietFor >= Self.continuousUpdatesPollSeconds else {
+					continue
+				}
+
+				self.state.lastFramebufferUpdateAt = Date()
+
+				// Deliberately bypassing the Continuous Updates guard: that guard is a
+				// no-op exactly in the state we are insuring against.
+				try? await self.sendFramebufferUpdateRequest(bypassingContinuousUpdates: true)
+			}
+		}
+	}
+
 	func handleFramebufferUpdateMessage() async throws {
+		// Recorded before the framebuffer guard so the safety poll sees liveness even
+		// in the (fatal) case where we have no framebuffer to draw into.
+		state.lastFramebufferUpdateAt = Date()
+
 		guard let framebuffer = framebuffer else {
 			throw VNCError.protocol(.framebufferUpdateReceivedWithoutFramebuffer)
 		}
@@ -133,6 +194,20 @@ private extension VNCConnection {
 			logger.logDebug("Continuous Updates supported (server sent EndOfContinuousUpdates)")
 		} else {
 			logger.logDebug("Disabling Continuous Updates")
+		}
+
+		// Actually turn the extension on. Advertising -313 and then never sending
+		// EnableContinuousUpdates left every frame costing a full round trip: the
+		// client asks, waits, decodes, asks again. Measured against a mock server at
+		// 25ms one-way that ping-pong caps out at ~15fps, while the same server with
+		// no delay reaches ~7000 — the entire difference is the round trip.
+		//
+		// Only on the *first* EndOfContinuousUpdates: later ones are the server
+		// acknowledging that it stopped, and re-enabling there would loop.
+		if first {
+			try await enableContinuousUpdates()
+
+			return
 		}
 
 		try await sendFramebufferUpdateRequest()
