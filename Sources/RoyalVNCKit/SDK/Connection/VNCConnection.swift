@@ -291,6 +291,11 @@ extension VNCConnection {
 		state.disconnectRequested = true
 		updateConnectionState(.disconnecting)
 
+		// The send loop exits on `disconnectRequested`, but it may be parked in
+		// `waitForElement()` waiting for a message that will never come. Wake it
+		// so it re-evaluates its loop condition and lets the connection go.
+		clientToServerMessageQueue.wake()
+
 		connection.setStatusUpdateHandler(nil)
 		connection.cancel()
 

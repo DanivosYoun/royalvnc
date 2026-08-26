@@ -61,9 +61,19 @@ extension VNCConnection {
 private extension VNCConnection {
 	func send() async throws {
 		guard !state.disconnectRequested,
-              connection.isReady,
-			  let message = clientToServerMessageQueue.dequeue() else {
+              connection.isReady else {
+			// Not writable yet. There is nothing to be woken by, so back off.
 			try await Task.sleep(seconds: 0.01)
+
+			return
+		}
+
+		guard let message = clientToServerMessageQueue.dequeue() else {
+			// Park until something is enqueued rather than polling every 10ms.
+			// The poll put up to 10ms in front of every key and pointer event —
+			// the send loop is the only thing between an NSEvent and the socket —
+			// and woke an idle session ~70 times a second for nothing.
+			await clientToServerMessageQueue.waitForElement()
 
 			return
 		}

@@ -13,6 +13,13 @@ extension NWConnection: NetworkConnection {
         let tcpOptions = NWProtocolTCP.Options()
         tcpOptions.connectionTimeout = settings.connectionTimeout
 
+        // RFB is a latency-bound request/response protocol whose client messages
+        // are tiny — a PointerEvent is 6 bytes, a FramebufferUpdateRequest 10 —
+        // and each is written on its own. Nagle exists to coalesce exactly that
+        // traffic pattern, at the cost of holding a small write until the peer
+        // ACKs the previous one. That trade is wrong here.
+        tcpOptions.noDelay = true
+
         let connectionParameters = NWParameters(tls: nil,
                                                 tcp: tcpOptions)
 
