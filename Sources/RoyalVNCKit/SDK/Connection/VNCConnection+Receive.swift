@@ -88,9 +88,7 @@ private extension VNCConnection {
 			return
 		}
 
-		state.lastFramebufferUpdateAt = Date()
-
-		logger.logDebug("Continuous Updates enabled; safety poll running")
+		logger.logDebug("Continuous Updates enabled; heartbeat request running")
 
 		Task { [weak self] in
 			while true {
@@ -102,26 +100,27 @@ private extension VNCConnection {
 					return
 				}
 
-				let quietFor = Date().timeIntervalSince(self.state.lastFramebufferUpdateAt)
-
-				guard quietFor >= Self.continuousUpdatesPollSeconds else {
-					continue
-				}
-
-				self.state.lastFramebufferUpdateAt = Date()
-
-				// Deliberately bypassing the Continuous Updates guard: that guard is a
-				// no-op exactly in the state we are insuring against.
+				// Sent unconditionally, NOT only after a quiet stretch.
+				//
+				// It began as a safety poll against a server that acknowledges the
+				// extension and then pushes nothing, and gating it on silence was enough
+				// for that. It is not enough for pseudo-encodings. Cursor shape arrives as
+				// a `-239` rectangle carried **inside a FramebufferUpdate**, and servers
+				// that attach pseudo-encoding rectangles to an explicit request stop
+				// sending them once the client stops asking. A session in active use is
+				// never quiet, so a silence-gated request may never fire for its whole
+				// lifetime — which froze the pointer on whatever shape it happened to hold
+				// when Continuous Updates was switched on.
+				//
+				// Cost is a 10-byte message once a second. That buys back cursor updates
+				// and keeps the original guarantee (a server that pushes nothing still
+				// gets asked) as a special case rather than the only case.
 				try? await self.sendFramebufferUpdateRequest(bypassingContinuousUpdates: true)
 			}
 		}
 	}
 
 	func handleFramebufferUpdateMessage() async throws {
-		// Recorded before the framebuffer guard so the safety poll sees liveness even
-		// in the (fatal) case where we have no framebuffer to draw into.
-		state.lastFramebufferUpdateAt = Date()
-
 		guard let framebuffer = framebuffer else {
 			throw VNCError.protocol(.framebufferUpdateReceivedWithoutFramebuffer)
 		}
