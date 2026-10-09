@@ -1,13 +1,13 @@
 {
-  "originHash" : "8efe29ad7697d4de2d1f0783edd95307f69136a76273b2837998801de5444e9a",
+  "originHash" : "0c4f366b1213df8ad62707dfd7818865a3366ca6c691155f94d30c10f7b64765",
   "pins" : [
     {
       "identity" : "cryptoswift",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/royalapplications/CryptoSwift.git",
+      "location" : "https://github.com/krzyzanowskim/CryptoSwift.git",
       "state" : {
-        "branch" : "foundationessentials",
-        "revision" : "a59b4d91ebb22011656c830f874fe7152e183a57"
+        "revision" : "f2a627b84c1ff96f21ac2fcb623ab36142dd5512",
+        "version" : "1.10.0"
       }
     },
     {
