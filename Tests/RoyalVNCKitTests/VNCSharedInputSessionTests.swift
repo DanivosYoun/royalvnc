@@ -860,11 +860,13 @@ final class Share: @unchecked Sendable {
 }
 
 extension VNCSharedInputSessionTests {
-    func testDesignBlockStaleLocalKeysymClaimSuppressesShareRelease() async {
+    func testPhysicalLocalKeyUpDoesNotLeaveAStaleKeysymClaim() async {
         let f = Fixture()
-        f.conn.keyDown(VNCKeyCode(0x48))
+        f.conn.keyDown(VNCKeyCode(0x48), physicalKeyCode: 4)
         await f.drain()
-        f.conn.keyUp(VNCKeyCode(0x68))
+        f.conn.keyDown(VNCKeyCode(0x68), physicalKeyCode: 4)
+        await f.drain()
+        f.conn.keyUp(physicalKeyCode: 4)
         await f.drain()
         let share = f.makeShare()
         XCTAssertTrue(share.activate())
@@ -874,7 +876,27 @@ extension VNCSharedInputSessionTests {
         await f.drain()
         let result = await share.finishClose()
         XCTAssertEqual(result, .released)
-        XCTAssertTrue(f.wire.contains(.key(0x48, down: false)),
-                      "stale local H ownership suppressed the share release while close reported success")
+        XCTAssertEqual(f.wire, [.key(0x48, down: true), .key(0x68, down: true),
+                               .key(0x68, down: false), .key(0x48, down: false),
+                               .key(0x48, down: true), .key(0x48, down: false)])
     }
+
+    func testPhysicalLocalOwnershipSurvivesShareClose() async {
+        let f = Fixture()
+        f.conn.keyDown(VNCKeyCode(a), physicalKeyCode: 0)
+        await f.drain()
+        let share = f.makeShare()
+        XCTAssertTrue(share.activate())
+        XCTAssertTrue(share.submit([.keyDown(1, a)]))
+        await f.drain()
+        share.beginClose()
+        await f.drain()
+        let result = await share.finishClose()
+        XCTAssertEqual(result, .released)
+        XCTAssertFalse(f.wire.contains(.key(a, down: false)))
+        f.conn.keyUp(physicalKeyCode: 0)
+        await f.drain()
+        XCTAssertEqual(f.wire.last, .key(a, down: false))
+    }
+
 }

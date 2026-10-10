@@ -493,7 +493,7 @@ extension VNCCAFramebufferView {
 		let keyCodes = keyCodesFrom(event: event)
 
 		for keyCode in keyCodes {
-			connection.keyDown(keyCode)
+			connection.keyDown(keyCode, physicalKeyCode: event.keyCode)
 		}
 	}
 
@@ -503,11 +503,7 @@ extension VNCCAFramebufferView {
 			return
 		}
 
-		let keyCodes = keyCodesFrom(event: event)
-
-		for keyCode in keyCodes {
-			connection.keyUp(keyCode)
-		}
+		connection.keyUp(physicalKeyCode: event.keyCode)
 	}
 
 	func handleFlagsChanged(with event: NSEvent) {

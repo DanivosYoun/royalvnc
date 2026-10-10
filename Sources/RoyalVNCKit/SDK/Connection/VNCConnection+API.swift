@@ -84,6 +84,20 @@ public extension VNCConnection {
 						isDown: true)
 	}
 
+	/// Physical keys use a separate identity range from the legacy keysym API.
+	func keyDown(_ key: VNCKeyCode, physicalKeyCode: UInt16) {
+		enqueueKeyEvent(key: key, isDown: true,
+						identity: 0x10000000 | UInt32(physicalKeyCode))
+	}
+
+	/// Release the keysyms recorded by DOWN, without remapping the UP event.
+	func keyUp(physicalKeyCode: UInt16) {
+		guard settings.inputMode != .none else { return }
+		enqueueInput(owner: inputLedger.local,
+					 actions: [ .keyUp(identity: 0x10000000 | UInt32(physicalKeyCode),
+										 fallbackKeysym: nil) ])
+	}
+
 #if canImport(ObjectiveC)
 	@objc(keyDown:)
 #endif

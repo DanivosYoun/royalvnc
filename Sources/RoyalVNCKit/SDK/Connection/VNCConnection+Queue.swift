@@ -11,7 +11,8 @@ import CoreGraphics
 // MARK: - Queue Management
 extension VNCConnection {
 	func enqueueKeyEvent(key: VNCKeyCode,
-						 isDown: Bool) {
+						 isDown: Bool,
+						 identity: UInt32? = nil) {
 		guard settings.inputMode != .none else { return }
 
 		let isARD = state.isAppleRemoteDesktop
@@ -24,8 +25,8 @@ extension VNCConnection {
 
 		// The local host's UP has always gone out unconditionally, even without a recorded DOWN.
 		let action: VNCInputAction = isDown
-			? .keyDown(identity: key.rawValue, keysym: keyCode)
-			: .keyUp(identity: key.rawValue, fallbackKeysym: keyCode)
+			? .keyDown(identity: identity ?? key.rawValue, keysym: keyCode)
+			: .keyUp(identity: identity ?? key.rawValue, fallbackKeysym: keyCode)
 
 		enqueueInput(owner: inputLedger.local,
 					 actions: [ action ])
