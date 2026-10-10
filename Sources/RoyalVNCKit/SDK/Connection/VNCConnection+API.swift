@@ -34,7 +34,7 @@ public extension VNCConnection {
 
 		let sendPixelFormatMessage = VNCProtocol.SetPixelFormat(pixelFormat: newPixelFormat)
 
-		clientToServerMessageQueue.enqueue(sendPixelFormatMessage)
+		enqueueClientToServerMessage(sendPixelFormatMessage)
 
 		recreateFramebuffer(size: framebuffer.size,
 							screens: framebuffer.screens,
@@ -48,8 +48,7 @@ public extension VNCConnection {
     @objc
 #endif
     func mouseMove(x: UInt16, y: UInt16) {
-        enqueueMouseEvent(nonNormalizedX: x,
-                          nonNormalizedY: y)
+        enqueueLocalPointerEvent(.pointerMove(x: x, y: y))
     }
 
 #if canImport(ObjectiveC)
@@ -57,11 +56,7 @@ public extension VNCConnection {
 #endif
     func mouseButtonDown(_ button: VNCMouseButton,
                          x: UInt16, y: UInt16) {
-        updateMouseButtonState(button: button,
-                               isDown: true)
-
-        enqueueMouseEvent(nonNormalizedX: x,
-                          nonNormalizedY: y)
+        enqueueLocalPointerEvent(.buttonDown(button, x: x, y: y))
     }
 
 #if canImport(ObjectiveC)
@@ -69,11 +64,7 @@ public extension VNCConnection {
 #endif
     func mouseButtonUp(_ button: VNCMouseButton,
                        x: UInt16, y: UInt16) {
-        updateMouseButtonState(button: button,
-                               isDown: false)
-
-        enqueueMouseEvent(nonNormalizedX: x,
-                          nonNormalizedY: y)
+        enqueueLocalPointerEvent(.buttonUp(button, x: x, y: y))
     }
 
 #if canImport(ObjectiveC)
@@ -82,39 +73,7 @@ public extension VNCConnection {
     func mouseWheel(_ wheel: VNCMouseWheel,
                     x: UInt16, y: UInt16,
                     steps: UInt32) {
-        for _ in 0..<steps {
-            updateMouseButtonState(wheel: wheel,
-                                   isDown: true)
-
-            enqueueMouseEvent(nonNormalizedX: x,
-                              nonNormalizedY: y)
-
-            updateMouseButtonState(wheel: wheel,
-                                   isDown: false)
-        }
-    }
-}
-
-extension VNCConnection {
-    func updateMouseButtonState(button: VNCMouseButton,
-                                isDown: Bool) {
-        updateMouseButtonState(mousePointerButton: button.mousePointerButton,
-                               isDown: isDown)
-    }
-
-    func updateMouseButtonState(wheel: VNCMouseWheel,
-                                isDown: Bool) {
-        updateMouseButtonState(mousePointerButton: wheel.mousePointerButton,
-                               isDown: isDown)
-    }
-
-    func updateMouseButtonState(mousePointerButton: VNCProtocol.MousePointerButton,
-                                isDown: Bool) {
-        if isDown {
-            mouseButtonState.insert(mousePointerButton)
-        } else {
-            mouseButtonState.remove(mousePointerButton)
-        }
+        enqueueLocalPointerEvent(.wheel(wheel, x: x, y: y, steps: steps))
     }
 }
 

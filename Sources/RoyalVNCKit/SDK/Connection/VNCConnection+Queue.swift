@@ -22,40 +22,68 @@ extension VNCConnection {
 
 		logger.logDebug("Enqueuing Key \(keyEvent.description)")
 
-		enqueueClientToServerMessage(keyEvent)
+		// The local host's UP has always gone out unconditionally, even without a recorded DOWN.
+		let action: VNCInputAction = isDown
+			? .keyDown(identity: key.rawValue, keysym: keyCode)
+			: .keyUp(identity: key.rawValue, fallbackKeysym: keyCode)
+
+		enqueueInput(owner: inputLedger.local,
+					 actions: [ action ])
 	}
 
-    func enqueueMouseEvent(nonNormalizedX: UInt16,
-                           nonNormalizedY: UInt16) {
-        guard settings.inputMode != .none else { return }
-
-        let normalizedPosition = normalizedMousePosition(x: nonNormalizedX,
-                                                         y: nonNormalizedY)
-
-        enqueueMouseEvent(buttons: mouseButtonState,
-                          position: normalizedPosition)
-    }
-
-    func enqueueMouseEvent(buttons: VNCProtocol.MousePointerButton,
-                           nonNormalizedX: UInt16,
-                           nonNormalizedY: UInt16) {
-        guard settings.inputMode != .none else { return }
-
-        let normalizedPosition = normalizedMousePosition(x: nonNormalizedX,
-                                                         y: nonNormalizedY)
-
-        enqueueMouseEvent(buttons: buttons,
-                          position: normalizedPosition)
-    }
-
-	func enqueueMouseEvent(buttons: VNCProtocol.MousePointerButton,
-						   position: VNCProtocol.MousePosition) {
+	func enqueueLocalPointerEvent(_ command: VNCSharedInputCommand) {
 		guard settings.inputMode != .none else { return }
 
-		let pointerEvent = VNCProtocol.PointerEvent(buttons: buttons,
-													position: position)
+		enqueueInput(owner: inputLedger.local,
+					 actions: inputActions(for: command))
+	}
 
-		enqueueClientToServerMessage(pointerEvent)
+	/// The send loop decides at execution time, per owner, whether the batch still runs.
+	func enqueueInput(owner: VNCInputOwner,
+					  actions: [VNCInputAction]) {
+		guard !actions.isEmpty else { return }
+
+		clientToServerMessageQueue.enqueue(.input(VNCInputBatch(owner: owner,
+																actions: actions)))
+	}
+
+	func keysym(for key: VNCKeyCode) -> UInt32 {
+		key.rawValue(forAppleRemoteDesktop: state.isAppleRemoteDesktop)
+	}
+
+	func inputActions(for command: VNCSharedInputCommand) -> [VNCInputAction] {
+		switch command {
+			case .keyDown(let key, let identity):
+				return [ .keyDown(identity: identity, keysym: keysym(for: key)) ]
+
+			case .keyUp(let identity):
+				return [ .keyUp(identity: identity, fallbackKeysym: nil) ]
+
+			case .syncModifiers(let keys):
+				return [ .syncModifiers(keys.map(keysym(for:))) ]
+
+			case .keyChord(let keys):
+				return [ .chord(keys.map(keysym(for:))) ]
+
+			case .pointerMove(let x, let y):
+				return [ .pointer(.none, normalizedMousePosition(x: x, y: y)) ]
+
+			case .buttonDown(let button, let x, let y):
+				return [ .pointer(.down(button.mousePointerButton), normalizedMousePosition(x: x, y: y)) ]
+
+			case .buttonUp(let button, let x, let y):
+				return [ .pointer(.up(button.mousePointerButton), normalizedMousePosition(x: x, y: y)) ]
+
+			case .wheel(let wheel, let x, let y, let steps):
+				let button = wheel.mousePointerButton
+				let position = normalizedMousePosition(x: x, y: y)
+
+				// Each step is a press and a release, executed back to back.
+				return (0..<steps).flatMap({ _ in
+					[ VNCInputAction.pointer(.down(button), position),
+					  VNCInputAction.pointer(.up(button), position) ]
+				})
+		}
 	}
 
 	func enqueueClientCutTextMessage(_ text: String) {
@@ -65,7 +93,7 @@ extension VNCConnection {
 	}
 
 	func enqueueClientToServerMessage(_ message: VNCSendableMessage) {
-		clientToServerMessageQueue.enqueue(message)
+		clientToServerMessageQueue.enqueue(.message(message))
 	}
 
     func normalizedMousePosition(x: UInt16,

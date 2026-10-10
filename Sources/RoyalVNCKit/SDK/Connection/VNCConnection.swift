@@ -70,9 +70,15 @@ public final class VNCConnection: NSObjectOrAnyObject {
 	let clipboard: VNCClipboard
 	let clipboardMonitor: VNCClipboardMonitor
 
-	var clientToServerMessageQueue = Queue<VNCSendableMessage>()
+	var clientToServerMessageQueue = Queue<VNCOutbound>()
 
-    var mouseButtonState: VNCProtocol.MousePointerButton = [ ]
+	/// What the send loop really wrote and who owns it. The local input API and every shared
+	/// input handle account in the same ledger.
+	let inputLedger = VNCInputLedger()
+
+	/// Replaces the socket as the destination of outgoing messages. Lets tests drive the send loop
+	/// without a network connection.
+	var outboundWriter: NetworkConnectionWriting?
 
     lazy var connection: some NetworkConnection = {
         let connectionSettings = NetworkConnectionSettings(connectionTimeout: 15,
@@ -294,6 +300,9 @@ extension VNCConnection {
 
 		state.disconnectRequested = true
 		updateConnectionState(.disconnecting)
+
+		// Whatever a handle still holds can no longer be released: complete its close now.
+		inputLedger.connectionDidClose()
 
 		// The send loop exits on `disconnectRequested`, but it may be parked in
 		// `waitForElement()` waiting for a message that will never come. Wake it

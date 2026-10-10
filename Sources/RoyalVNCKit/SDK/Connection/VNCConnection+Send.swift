@@ -18,6 +18,9 @@ extension VNCConnection {
 					handleBreakingError(error)
 				}
 			}
+
+			// However the loop ended, nothing executes input anymore: do not leave a close waiting for it.
+			inputLedger.connectionDidClose()
 		}
 	}
 
@@ -64,7 +67,65 @@ extension VNCConnection {
 	}
 }
 
+extension VNCConnection {
+	/// One step of the send loop behind the readiness gate: the releases of closing input handles
+	/// first, then the next queued item. Returns false when there was nothing to do.
+	func sendNext() async throws -> Bool {
+		let released = try await sendPendingInputReleases()
+
+		guard let outbound = clientToServerMessageQueue.dequeue() else { return released }
+
+		switch outbound {
+			case .message(let message):
+				try await sendMessage(message)
+			case .input(let batch):
+				try await sendInput(batch)
+		}
+
+		return true
+	}
+}
+
 private extension VNCConnection {
+	/// The last executor of input. A batch whose handle is closing is dropped here, and a batch
+	/// that has started runs to its end before any release of its handle.
+	func sendInput(_ batch: VNCInputBatch) async throws {
+		guard inputLedger.begin(batch.owner) else { return }
+
+		defer { inputLedger.end(batch.owner) }
+
+		for action in batch.actions {
+			for step in inputLedger.steps(for: action, owner: batch.owner) {
+				// Nothing to write also covers a connection that went away while the batch ran.
+				guard let send = inputLedger.resolve(step, owner: batch.owner) else { continue }
+
+				try await sendMessage(send.message)
+
+				inputLedger.commit(send)
+			}
+		}
+	}
+
+	func sendPendingInputReleases() async throws -> Bool {
+		var didSend = false
+
+		while let send = inputLedger.nextRelease() {
+			do {
+				try await sendMessage(send.message)
+			} catch {
+				inputLedger.releaseFailed(send.owner)
+
+				throw error
+			}
+
+			inputLedger.commit(send)
+
+			didSend = true
+		}
+
+		return didSend
+	}
+
 	func send() async throws {
 		guard !state.disconnectRequested,
               connection.isReady else {
@@ -74,7 +135,7 @@ private extension VNCConnection {
 			return
 		}
 
-		guard let message = clientToServerMessageQueue.dequeue() else {
+		guard try await sendNext() else {
 			// Park until something is enqueued rather than polling every 10ms.
 			// The poll put up to 10ms in front of every key and pointer event —
 			// the send loop is the only thing between an NSEvent and the socket —
@@ -83,8 +144,6 @@ private extension VNCConnection {
 
 			return
 		}
-
-		try await sendMessage(message)
 	}
 
 	func sendFramebufferUpdateRequest(incremental: Bool,
@@ -110,6 +169,10 @@ private extension VNCConnection {
 	}
 
 	func sendMessage(_ message: VNCSendableMessage) async throws {
-		try await message.send(connection: connection)
+		if let outboundWriter {
+			try await message.send(connection: outboundWriter)
+		} else {
+			try await message.send(connection: connection)
+		}
 	}
 }
