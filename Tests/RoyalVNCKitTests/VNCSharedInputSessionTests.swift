@@ -900,3 +900,156 @@ extension VNCSharedInputSessionTests {
     }
 
 }
+
+// Two share handles active at the same time on one connection (one per viewer). The ledger's reference
+// counts and button masks span every owner, so closing one viewer releases only what that viewer holds.
+extension VNCSharedInputSessionTests {
+    func testTwoSharesHoldSameKey_closingOneKeepsItDown_closingOtherReleases() async {
+        let f = Fixture()
+        let first = f.makeShare()
+        let second = f.makeShare()
+        XCTAssertTrue(first.activate())
+        XCTAssertTrue(second.activate())
+
+        XCTAssertTrue(first.submit([.keyDown(1, a)]))
+        XCTAssertTrue(second.submit([.keyDown(1, a)]))
+        await f.drain()
+
+        first.beginClose()
+        await f.drain()
+        let firstResult = await first.finishClose()
+        XCTAssertEqual(firstResult, .released)
+        XCTAssertFalse(f.wire.contains(.key(a, down: false)),
+                       "closing one share released a key the other share still holds")
+
+        second.beginClose()
+        await f.drain()
+        let secondResult = await second.finishClose()
+        XCTAssertEqual(secondResult, .released)
+        XCTAssertEqual(f.wire.filter({ $0 == .key(a, down: false) }).count, 1)
+        XCTAssertEqual(f.wire.last, .key(a, down: false))
+    }
+
+    func testClosingOneShareReleasesOnlyItsButtons_maskKeepsOtherShares() async {
+        let f = Fixture()
+        let first = f.makeShare()
+        let second = f.makeShare()
+        XCTAssertTrue(first.activate())
+        XCTAssertTrue(second.activate())
+
+        XCTAssertTrue(first.submit([.buttonDown(.left, 10, 20)]))
+        await f.drain()
+        XCTAssertTrue(second.submit([.buttonDown(.right, 10, 20)]))
+        await f.drain()
+        XCTAssertEqual(f.wire.last?.pointerMask, 0b101)
+
+        first.beginClose()
+        await f.drain()
+        let firstResult = await first.finishClose()
+        XCTAssertEqual(firstResult, .released)
+        XCTAssertEqual(f.wire.last, .pointer(mask: 0b100, x: 10, y: 20))
+        XCTAssertFalse(f.wire.contains(where: { $0.isPointer(mask: 0) }),
+                       "closing one share released the other share's button")
+
+        second.beginClose()
+        await f.drain()
+        let secondResult = await second.finishClose()
+        XCTAssertEqual(secondResult, .released)
+        XCTAssertEqual(f.wire.last, .pointer(mask: 0, x: 10, y: 20))
+    }
+
+    func testShareModifierSyncDoesNotReleaseOtherSharesModifier() async {
+        let f = Fixture()
+        let first = f.makeShare()
+        let second = f.makeShare()
+        XCTAssertTrue(first.activate())
+        XCTAssertTrue(second.activate())
+
+        XCTAssertTrue(first.submit([.syncModifiers([shift])]))
+        await f.drain()
+        XCTAssertTrue(second.submit([.syncModifiers([shift])]))
+        await f.drain()
+        XCTAssertEqual(f.wire, [.key(shift, down: true)], "a modifier another share holds is claimed, not re-sent")
+
+        XCTAssertTrue(second.submit([.syncModifiers([])]))
+        await f.drain()
+        XCTAssertEqual(f.wire, [.key(shift, down: true)],
+                       "the second share's modifier sync released the first share's modifier")
+
+        XCTAssertTrue(first.submit([.syncModifiers([])]))
+        await f.drain()
+        XCTAssertEqual(f.wire, [.key(shift, down: true), .key(shift, down: false)])
+    }
+
+    func testOtherShareKeyUpOfSameIdentityDoesNotReleaseFirstShare() async {
+        let f = Fixture()
+        let first = f.makeShare()
+        let second = f.makeShare()
+        XCTAssertTrue(first.activate())
+        XCTAssertTrue(second.activate())
+
+        XCTAssertTrue(first.submit([.keyDown(1, a)]))
+        await f.drain()
+        // Same identity on the other share: an UP it never recorded a DOWN for.
+        XCTAssertTrue(second.submit([.keyUp(1)]))
+        await f.drain()
+        XCTAssertEqual(f.wire, [.key(a, down: true)], "another share's UP released the first share's key")
+
+        first.beginClose()
+        await f.drain()
+        let result = await first.finishClose()
+        XCTAssertEqual(result, .released)
+        XCTAssertEqual(f.wire, [.key(a, down: true), .key(a, down: false)])
+    }
+
+    func testClosingOneShareDoesNotDiscardOtherSharesQueuedBatches() async {
+        let f = Fixture()
+        let first = f.makeShare()
+        let second = f.makeShare()
+        XCTAssertTrue(first.activate())
+        XCTAssertTrue(second.activate())
+
+        // Both accepted and sitting in the native FIFO, never executed.
+        XCTAssertTrue(first.submit([.keyDown(1, a)]))
+        XCTAssertTrue(second.submit([.keyDown(1, b)]))
+
+        first.beginClose()
+        await f.drain()
+        let result = await first.finishClose()
+
+        XCTAssertEqual(result, .released)
+        XCTAssertEqual(f.wire, [.key(b, down: true)],
+                       "the closing share's backlog must go, the other share's must still run")
+        XCTAssertTrue(second.submit([.keyUp(1)]))
+        await f.drain()
+        XCTAssertEqual(f.wire, [.key(b, down: true), .key(b, down: false)])
+    }
+
+    // Pins the current meaning: a failed release write is a breaking send error, so the whole connection
+    // goes down. New handles are refused, and a handle that was still active stops accepting and reports
+    // its own release as unproven instead of claiming success.
+    func testFailedReleaseOfOneShareBreaksTheConnectionForEveryHandle() async {
+        let f = Fixture()
+        let first = f.makeShare()
+        let second = f.makeShare()
+        XCTAssertTrue(first.activate())
+        XCTAssertTrue(second.activate())
+
+        XCTAssertTrue(first.submit([.keyDown(1, a)]))
+        await f.drain()
+        XCTAssertTrue(second.submit([.keyDown(1, b)]))
+        await f.drain()
+
+        f.writer.failNextWrite()
+        first.beginClose()
+        await f.drain()
+        let firstResult = await first.finishClose()
+        XCTAssertEqual(firstResult, .failed)
+        XCTAssertFalse(f.canMakeShare(), "a release that could not be proven blocks new RW handles")
+
+        XCTAssertFalse(second.submit([.keyUp(1)]), "the connection is gone, so no handle accepts input")
+        let secondResult = await second.finishClose()
+        XCTAssertEqual(secondResult, .failed, "the other share's key was never released")
+        XCTAssertEqual(f.wire, [.key(a, down: true), .key(b, down: true)])
+    }
+}
